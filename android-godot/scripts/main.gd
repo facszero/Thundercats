@@ -29,6 +29,8 @@ var skip_button: Button
 var pause_button: Button
 var menu_clock = 0.0
 var app_active = true
+var desktop = OS.has_feature("windows") or OS.has_feature("linux") or OS.has_feature("macos")
+var desktop_menu: VBoxContainer
 var input_hint = "touch"
 var help_hint: Label
 const INPUT_HELP = {
@@ -40,6 +42,9 @@ const WebInterface = preload("res://scripts/web_interface.gd")
 const AdvancedVisuals = preload("res://scripts/advanced_visuals.gd")
 
 func _ready():
+	if desktop:
+		input_hint = "pad" if not Input.get_connected_joypads().is_empty() else "help"
+		get_window().title = "Gordian"
 	get_tree().auto_accept_quit = false
 	get_tree().quit_on_go_back = false
 	for id in range(1,15):
@@ -55,7 +60,7 @@ func _ready():
 	for name in ["canyon","quarry","tunnels","fortress","hangar-background","foundry","dam","reactor","eclipse","nucleus-background","cryo-background"]: textures[name] = load("res://assets/"+name+".webp")
 	setup_inputs()
 	Input.joy_connection_changed.connect(func(_device,connected):
-		if not connected and Input.get_connected_joypads().is_empty() and input_hint == "pad": set_input_hint("touch"))
+		if not connected and Input.get_connected_joypads().is_empty() and input_hint == "pad": set_input_hint("help" if desktop else "touch"))
 	music = audio("IntroGordian",-14)
 	music.finished.connect(func():
 		if sim.mode == "menu": music.play())
@@ -113,6 +118,7 @@ func _ready():
 			persist()
 			refresh_menu())
 	ui.add_child(skip_button)
+	if desktop: setup_desktop_menu()
 	refresh_menu()
 	if "--capture" in OS.get_cmdline_user_args():
 		sim.reset()
@@ -183,6 +189,10 @@ func set_input_hint(kind: String):
 	queue_redraw()
 
 func _input(event):
+	if desktop and event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_F11:
+		toggle_fullscreen()
+		get_viewport().set_input_as_handled()
+		return
 	if event is InputEventScreenTouch and event.pressed: set_input_hint("touch")
 	elif event is InputEventKey and event.pressed and not event.echo and event.physical_keycode in [KEY_LEFT,KEY_RIGHT,KEY_UP,KEY_DOWN,KEY_A,KEY_D,KEY_W,KEY_S,KEY_Z,KEY_SPACE,KEY_X,KEY_J,KEY_C,KEY_K]: set_input_hint("help")
 	elif event is InputEventJoypadButton and event.pressed: set_input_hint("pad")
@@ -230,12 +240,14 @@ func refresh_menu():
 	for child in menu.get_children():
 		menu.remove_child(child)
 		child.queue_free()
+	if desktop_menu: desktop_menu.visible = sim.mode in ["menu","pause","game_over","complete"]
 	last_mode = sim.mode
 	pause_button.visible = sim.mode not in ["menu","complete","game_over"]
 	if sim.mode != "menu": music.stop()
 	panel.position = Vector2(70,320) if sim.mode == "menu" else Vector2(300,145)
 	panel.size = Vector2(510,330) if sim.mode == "menu" else Vector2(680,430)
 	skip_button.visible = sim.mode == "transition"
+	if skip_button.visible: skip_button.grab_focus()
 	panel.visible = sim.mode in ["menu","pause","complete","game_over"]
 	if not panel.visible:
 		music.stop()
@@ -254,6 +266,7 @@ func refresh_menu():
 	menu.add_theme_constant_override("separation",18)
 	if sim.mode == "complete":
 		show_ending()
+		menu.get_child(menu.get_child_count()-1).grab_focus()
 		return
 	var heading = Label.new()
 	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -451,7 +464,7 @@ func _draw():
 		draw_title()
 		return
 	draw_hud()
-	if sim.mode == "play":
+	if sim.mode == "play" and not desktop:
 		for action in controls:
 			var rect = controls[action]
 			var active = Input.is_action_pressed(action)
@@ -507,3 +520,25 @@ func load_platforms(id: int):
 	textures["platforms%d" % id] = []
 	for i in levels[id].platforms.size():
 		textures["platforms%d" % id].append(load("res://assets/platform_%d.png" % i if id == 1 else "res://assets/level%d-platform_%d.png" % [id,i]))
+
+func toggle_fullscreen():
+	get_window().mode = Window.MODE_WINDOWED if get_window().mode == Window.MODE_FULLSCREEN else Window.MODE_FULLSCREEN
+
+func setup_desktop_menu():
+	desktop_menu = VBoxContainer.new()
+	desktop_menu.position = Vector2(950,580)
+	desktop_menu.add_theme_constant_override("separation",12)
+	ui.add_child(desktop_menu)
+	for title in ["PANTALLA COMPLETA · F11","GUARDAR Y SALIR"]:
+		var button = Button.new()
+		button.text = title
+		button.custom_minimum_size = Vector2(290,46)
+		button.add_theme_stylebox_override("normal",WebInterface.button_style())
+		button.add_theme_stylebox_override("hover",WebInterface.button_style(false,true))
+		if title.begins_with("PANTALLA"):
+			button.pressed.connect(toggle_fullscreen)
+		else:
+			button.pressed.connect(func():
+				persist()
+				get_tree().quit())
+		desktop_menu.add_child(button)
