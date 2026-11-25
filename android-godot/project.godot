@@ -1,9 +1,8 @@
 config_version=5
 
 [application]
-config/name="Gordian — Nivel 1 Android"
-config/icon="res://assets/icon.png"
-run/main_scene="res://main.tscn"
+config/name="ThunderCats — Patrulla del Cubil"
+run/main_scene="res://thundercats/patrol.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 
 [display]
