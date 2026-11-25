@@ -1,0 +1,11 @@
+.godot/
+build/
+*.keystore
+*.jks
+export_credentials.cfg
+android/
+assets/
+data/coupling-reference.json
+data/boss-reference.json
+
+data/advanced-reference.json
