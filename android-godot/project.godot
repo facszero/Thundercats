@@ -24,5 +24,5 @@ environment/defaults/default_clear_color=Color(0.025, 0.06, 0.1, 1)
 common/physics_ticks_per_second=120
 
 [input_devices]
-pointing/emulate_mouse_from_touch=false
+pointing/emulate_mouse_from_touch=true
 

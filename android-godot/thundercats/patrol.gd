@@ -5,8 +5,9 @@ const ROUTES = ["Salida del Cubil", "Paso de los Mutantes"]
 const ATLAS = preload("res://thundercats/heroes.webp")
 const TANK = preload("res://thundercats/tank.webp")
 const CANYON = preload("res://thundercats/canyon.webp")
+const SKYCUTTER = preload("res://thundercats/monkian-skycutter.webp")
 const HEIGHT = 160.0 # Standing height of Garbin in Gordian.
-const DECK = 419.0
+const DECK = 431.0
 const FINISH = 5400.0
 var hero := 0
 var route := 0
@@ -16,7 +17,9 @@ var altitude := 0.0
 var vertical_speed := 0.0
 var rider_x := 300.0
 var hits := 0
+var skycutters: Array[float] = []
 var mines: Array[float] = []
+var fingers := {}
 var swing := 0.0
 var recovery := 0.0
 var controls := Control.new()
@@ -31,6 +34,7 @@ func driver() -> int:
 	return 0 if hero == 2 else 2
 
 func clear_controls():
+	fingers.clear()
 	for child in controls.get_children():
 		controls.remove_child(child)
 		child.queue_free()
@@ -65,8 +69,13 @@ func start_run(index: int, stage: int):
 	recovery = 0
 	rider_x = 300
 	mines.clear()
+	skycutters.clear()
 	for i in range(8 + route*2):
-		mines.append(1100.0 + i*(540.0-route*80.0))
+		var marker := 1100.0 + i*(540.0-route*80.0)
+		if i % 2 == route:
+			skycutters.append(marker)
+		else:
+			mines.append(marker)
 	clear_controls()
 	left = button("◀", Vector2(30,633), Vector2(85,68), Callable())
 	right = button("▶", Vector2(128,633), Vector2(85,68), Callable())
@@ -88,6 +97,19 @@ func attack():
 
 func _input(event):
 	if mode != "ride": return
+	if event is InputEventScreenTouch:
+		if not event.pressed:
+			fingers.erase(event.index)
+		else:
+			for b in controls.get_children():
+				if b.get_global_rect().has_point(event.position):
+					if b == left: fingers[event.index] = -1
+					elif b == right: fingers[event.index] = 1
+					elif b.text == "Saltar": jump()
+					elif b.text == "Atacar": attack()
+					break
+		get_viewport().set_input_as_handled()
+		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.physical_keycode:
 			KEY_SPACE, KEY_Z, KEY_UP: jump()
@@ -112,6 +134,7 @@ func finish_run(success: bool):
 func _physics_process(dt):
 	if mode != "ride": return
 	var axis := Input.get_axis("ui_left","ui_right") + float(right.button_pressed) - float(left.button_pressed)
+	for direction in fingers.values(): axis += float(direction)
 	rider_x = clampf(rider_x + clampf(axis,-1,1)*190*dt, 210, 375)
 	distance += (240.0+route*55)*dt
 	altitude = maxf(0,altitude+vertical_speed*dt)
@@ -127,9 +150,25 @@ func _physics_process(dt):
 			hits += 1
 		elif gap < -120:
 			mines.remove_at(i)
+	for i in range(skycutters.size()-1,-1,-1):
+		var center := cutter_position(skycutters[i])
+		var player_offset := center - Vector2(rider_x,DECK-altitude)
+		var can_strike := player_offset.x >= -16 and player_offset.x < 164 and absf(player_offset.y+75)<68
+		if swing>0 and can_strike:
+			skycutters.remove_at(i)
+		elif absf(player_offset.x)<55 and player_offset.y > -HEIGHT-16 and player_offset.y < 18:
+			hits += 1
+			skycutters.remove_at(i)
+		elif center.x < -120:
+			skycutters.remove_at(i)
 	if hits >= 3 or distance >= FINISH:
 		finish_run(hits<3)
 	queue_redraw()
+
+func cutter_position(marker: float) -> Vector2:
+	var x := 320.0 + (marker-distance-320.0)*1.24
+	var dive := 1.0-smoothstep(480,900,x)
+	return Vector2(x,lerpf(205,DECK-67,dive)+sin(x/100)*7)
 
 func caption(at: Vector2, words: String, font_size: int):
 	draw_string(ThemeDB.fallback_font,at+Vector2(2,3),words,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size,Color("#141420"))
@@ -146,17 +185,24 @@ func _draw():
 		for i in HEROES.size():
 			draw_texture_rect_region(ATLAS,Rect2(78+i*288,300,256,158),Rect2(i*256,0,256,158))
 		return
-	var bob := sin(distance/19)*1.2
+	var bob := sin(distance/19)*0.65
 	draw_rect(Rect2(0,619,1280,101),Color("#352d39"))
 	for i in range(14):
 		var x := i*102-fmod(distance,102)
 		draw_line(Vector2(x,624),Vector2(x-36,632),Color("#745043"),3)
-	draw_texture_rect(TANK,Rect2(150,DECK+bob,480,202),false)
+	draw_set_transform(Vector2(310,624),0,Vector2(1,0.055))
+	draw_circle(Vector2.ZERO,147,Color("#241f25"))
+	draw_set_transform(Vector2.ZERO,0,Vector2.ONE)
+	draw_texture_rect(TANK,Rect2(150,DECK+bob,480,198-bob),false)
 	# Crop the seated driver's upper body to the open front cockpit.
 	draw_texture_rect_region(ATLAS,Rect2(413,DECK-14+bob,76,62),Rect2(driver()*256+57,170,142,116))
 	var foot := Vector2(rider_x,DECK-altitude+bob)
 	draw_texture_rect_region(ATLAS,Rect2(foot-Vector2(82,HEIGHT),Vector2(164,HEIGHT)),Rect2(hero*256,170,256,250))
 	if swing>0: draw_arc(foot+Vector2(27,-68),86,-1.3,0.72,20,Color("#ffe57b"),7,true)
+	for marker in skycutters:
+		var center := cutter_position(marker)
+		if center.x >= -110 and center.x <= 1390:
+			draw_texture_rect(SKYCUTTER,Rect2(center-Vector2(93,47),Vector2(186,94)),false)
 	for mark in mines:
 		var p := Vector2(mark-distance,DECK-26)
 		if p.x < -35 or p.x > 1315: continue
@@ -166,7 +212,7 @@ func _draw():
 		draw_circle(p,5,Color("#fff49d"))
 	draw_rect(Rect2(0,0,1280,88),Color(0.05,0.06,0.12,0.9))
 	caption(Vector2(30,36),ROUTES[route]+"   /   "+HEROES[hero],27)
-	caption(Vector2(30,68),"Conduce "+HEROES[driver()]+"   ·   Saltá o golpeá las minas",20)
+	caption(Vector2(30,68),"Conduce "+HEROES[driver()]+"   ·   Saltá o atacá cuando baje el Skycutter",20)
 	caption(Vector2(950,54),"%d%%     Escudo %d/3" % [mini(100,int(100*distance/FINISH)),3-hits],25)
 	if mode in ["won","lost"]:
 		draw_rect(Rect2(290,230,700,320),Color("#231d30"))
